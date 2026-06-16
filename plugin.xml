@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+
+<plugin>
+
+    <extension
+        point="org.eclipse.cdt.managedbuilder.core.buildDefinitions">
+        <managedBuildRevision
+            fileVersion="4.0.0">
+        </managedBuildRevision>
+
+        <projectType
+            id="mik32.eclipse.toolchain.projectType.executable"
+            name="MIK32 Executable"
+            superClass="ilg.gnumcueclipse.managedbuild.cross.riscv.target.elf"
+            isTest="false"
+            isAbstract="false"
+            buildArtefactType="org.eclipse.cdt.build.core.buildArtefactType.exe">
+
+            <configuration
+                id="mik32.eclipse.toolchain.configuration.debug.eeprom"
+                name="MIK32 EEPROM"
+                parent="ilg.gnumcueclipse.managedbuild.cross.riscv.config.elf.debug">
+                <toolChain
+                    id="mik32.eclipse.toolchain.toolchain.debug.eeprom"
+                    secondaryOutputs="ilg.gnumcueclipse.managedbuild.cross.riscv.createflash.output;ilg.gnumcueclipse.managedbuild.cross.riscv.createlisting.output;ilg.gnumcueclipse.managedbuild.cross.riscv.printsize.output"
+                    superClass="ilg.gnumcueclipse.managedbuild.cross.riscv.toolchain.elf.debug"
+                    targetTool="ilg.gnumcueclipse.managedbuild.cross.riscv.tool.c.linker;ilg.gnumcueclipse.managedbuild.cross.riscv.tool.cpp.linker">
+                </toolChain>
+            </configuration>
+
+            <configuration
+                id="mik32.eclipse.toolchain.configuration.debug.flash"
+                name="MIK32 Flash"
+                parent="ilg.gnumcueclipse.managedbuild.cross.riscv.config.elf.debug">
+                <toolChain
+                    id="mik32.eclipse.toolchain.toolchain.debug.flash"
+                    secondaryOutputs="ilg.gnumcueclipse.managedbuild.cross.riscv.createflash.output;ilg.gnumcueclipse.managedbuild.cross.riscv.createlisting.output;ilg.gnumcueclipse.managedbuild.cross.riscv.printsize.output"
+                    superClass="ilg.gnumcueclipse.managedbuild.cross.riscv.toolchain.elf.debug"
+                    targetTool="ilg.gnumcueclipse.managedbuild.cross.riscv.tool.c.linker;ilg.gnumcueclipse.managedbuild.cross.riscv.tool.cpp.linker">
+                </toolChain>
+            </configuration>
+
+            <configuration
+                id="mik32.eclipse.toolchain.configuration.debug.ram"
+                name="MIK32 RAM"
+                parent="ilg.gnumcueclipse.managedbuild.cross.riscv.config.elf.debug">
+                <toolChain
+                    id="mik32.eclipse.toolchain.toolchain.debug.ram"
+                    secondaryOutputs="ilg.gnumcueclipse.managedbuild.cross.riscv.createflash.output;ilg.gnumcueclipse.managedbuild.cross.riscv.createlisting.output;ilg.gnumcueclipse.managedbuild.cross.riscv.printsize.output"
+                    superClass="ilg.gnumcueclipse.managedbuild.cross.riscv.toolchain.elf.debug"
+                    targetTool="ilg.gnumcueclipse.managedbuild.cross.riscv.tool.c.linker;ilg.gnumcueclipse.managedbuild.cross.riscv.tool.cpp.linker">
+                </toolChain>
+            </configuration>
+
+        </projectType>
+    </extension>
+
+    <extension
+        point="org.eclipse.ui.commands">
+        <command
+            id="mik32.eclipse.toolchain.commands.newProject"
+            name="New MIK32 Project">
+        </command>
+        <command
+            id="mik32.eclipse.toolchain.commands.examples"
+            name="MIK32 Examples">
+        </command>
+        <command
+            id="mik32.eclipse.toolchain.commands.cmakeProject"
+            name="New MIK32 CMake Project">
+        </command>
+        <command
+            id="mik32.eclipse.toolchain.commands.importProject"
+            name="Import MIK32 Project">
+        </command>
+        <command
+            id="mik32.eclipse.toolchain.commands.about"
+            name="About MIK32 Extension">
+        </command>
+    </extension>
+
+    <extension
+        point="org.eclipse.ui.handlers">
+        <handler
+            commandId="mik32.eclipse.toolchain.commands.newProject"
+            class="mik32.eclipse.toolchain.Mik32ProjectWizardHandler">
+        </handler>
+        <handler
+            commandId="mik32.eclipse.toolchain.commands.examples"
+            class="mik32.eclipse.toolchain.Mik32ExamplesHandler">
+        </handler>
+        <handler
+            commandId="mik32.eclipse.toolchain.commands.cmakeProject"
+            class="mik32.eclipse.toolchain.Mik32CMakeProjectWizardHandler">
+        </handler>
+        <handler
+            commandId="mik32.eclipse.toolchain.commands.importProject"
+            class="mik32.eclipse.toolchain.Mik32ImportProjectHandler">
+        </handler>
+        <handler
+            commandId="mik32.eclipse.toolchain.commands.about"
+            class="mik32.eclipse.toolchain.Mik32AboutHandler">
+        </handler>
+    </extension>
+
+    <extension
+        point="org.eclipse.ui.menus">
+        <menuContribution
+            locationURI="menu:file?after=new.ext">
+            <menu
+                id="mik32.eclipse.toolchain.menus.projects"
+                icon="icons/mik32_16.png"
+                label="MIK32 Projects...">
+                <command
+                    commandId="mik32.eclipse.toolchain.commands.newProject"
+                    icon="icons/mik32_16.png"
+                    label="New Project..."
+                    style="push">
+                </command>
+                <command
+                    commandId="mik32.eclipse.toolchain.commands.examples"
+                    icon="icons/mik32_16.png"
+                    label="Examples..."
+                    style="push">
+                </command>
+                <command
+                    commandId="mik32.eclipse.toolchain.commands.cmakeProject"
+                    icon="icons/mik32_16.png"
+                    label="CMake Project..."
+                    style="push">
+                </command>
+                <command
+                    commandId="mik32.eclipse.toolchain.commands.importProject"
+                    icon="icons/mik32_16.png"
+                    label="Import Project..."
+                    style="push">
+                </command>
+                <separator
+                    name="mik32.eclipse.toolchain.separator.about"
+                    visible="true">
+                </separator>
+                <command
+                    commandId="mik32.eclipse.toolchain.commands.about"
+                    icon="icons/mik32_16.png"
+                    label="About / Support..."
+                    style="push">
+                </command>
+            </menu>
+        </menuContribution>
+    </extension>
+
+    <extension
+        point="org.eclipse.ui.newWizards">
+        <wizard
+            id="mik32.eclipse.toolchain.wizards.mik32Project"
+            name="MIK32 Project"
+            class="mik32.eclipse.toolchain.Mik32ProjectWizard"
+            icon="icons/mik32_16.png"
+            project="true"
+            hasPages="true"
+            canFinishEarly="false">
+            <description>
+                Create a MIK32 embedded project.
+            </description>
+        </wizard>
+    </extension>
+
+    <extension
+        point="org.eclipse.ui.preferencePages">
+        <page
+            id="mik32.eclipse.toolchain.preferences"
+            name="MIK32"
+            class="mik32.eclipse.toolchain.Mik32PreferencePage">
+        </page>
+    </extension>
+
+    <extension
+        point="org.eclipse.ui.startup">
+        <startup
+            class="mik32.eclipse.toolchain.Startup">
+        </startup>
+    </extension>
+
+</plugin>

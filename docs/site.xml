@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site>
+   <feature url="features/mik32.eclipse.toolchain.feature_1.0.1.jar" id="mik32.eclipse.toolchain.feature" version="1.0.1">
+      <category name="mik32-tools"/>
+   </feature>
+   <category-def name="mik32-tools" label="MIK32 Tools">
+      <description>
+         Tools and integrations for MIK32 development.
+      </description>
+   </category-def>
+</site>
