@@ -8,6 +8,8 @@
 #ifndef MAIN_H_
 #define MAIN_H_
 
+#include <stdint.h>
+
 #include "mik32_hal_pcc.h"
 #include "mik32_hal_gpio.h"
 

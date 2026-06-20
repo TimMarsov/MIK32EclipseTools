@@ -17,6 +17,8 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectDescription;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IWorkspace;
+import org.eclipse.cdt.core.model.ICProject;
+import org.eclipse.cdt.core.model.IPathEntry;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.FileLocator;
@@ -28,9 +30,11 @@ import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.cdt.core.CCProjectNature;
 import org.eclipse.cdt.core.CCorePlugin;
+import org.eclipse.cdt.core.CProjectNature;
 import org.eclipse.cdt.core.model.CoreModel;
 import org.eclipse.cdt.core.settings.model.ICConfigurationDescription;
 import org.eclipse.cdt.core.settings.model.ICProjectDescription;
+import org.eclipse.cdt.cmake.core.CMakeNature;
 import org.eclipse.cdt.managedbuilder.core.IBuilder;
 import org.eclipse.cdt.managedbuilder.core.IConfiguration;
 import org.eclipse.cdt.managedbuilder.core.IManagedBuildInfo;
@@ -88,7 +92,7 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
 
     @Override
     public void addPages() {
-        projectPage = new Mik32ProjectPage(mode.title);
+        projectPage = new Mik32ProjectPage(mode.title, mode == ProjectMode.CMAKE);
         addPage(projectPage);
     }
 
@@ -105,8 +109,12 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
             return true;
         } catch (Exception exception) {
             Throwable cause = unwrap(exception);
+            String message = cause.getMessage();
+            if (message == null || message.isBlank()) {
+                message = cause.getClass().getSimpleName();
+            }
             MessageDialog.openError(getShell(), "MIK32 Project",
-                    "Failed to create MIK32 project: " + cause.getMessage());
+                    "Failed to create MIK32 project: " + message);
             log(cause);
             return false;
         }
@@ -136,7 +144,11 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
             copyFramework(project, monitor);
         }
         project.refreshLocal(IResource.DEPTH_INFINITE, monitor);
-        configureManagedProject(project, monitor, projectPage.isLinkFramework(), projectPage.isCpp());
+        if (mode == ProjectMode.CMAKE) {
+            configureCMakeProject(project, monitor, projectPage.isCpp());
+        } else {
+            configureManagedProject(project, monitor, projectPage.isLinkFramework(), projectPage.isCpp());
+        }
         createCMakeLists(project, monitor);
         createMetadataFile(project, monitor);
         createLaunchConfigurations(project, monitor);
@@ -187,17 +199,17 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
         if (projectType != null && info != null) {
             IManagedProject managedProject = ManagedBuildManager.createManagedProject(project, projectType);
             info.setManagedProject(managedProject);
-            
+
             for (IConfiguration existingConfig : managedProject.getConfigurations()) {
                 managedProject.removeConfiguration(existingConfig.getId());
             }
-            
+
             for (IConfiguration config : projectType.getConfigurations()) {
                 if (isUserBuildConfiguration(config)) {
                     createBuildConfiguration(project, managedProject, config, linkedFramework);
                 }
             }
-            
+
             if (managedProject.getConfigurations().length > 0) {
                 IConfiguration configuration = managedProject.getConfigurations()[0];
                 ManagedBuildManager.setDefaultConfiguration(project, configuration);
@@ -207,6 +219,42 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
             ManagedBuildManager.updateCoreSettings(project);
             removeExtraCdtConfigurations(project, monitor);
         }
+    }
+
+    private static void configureCMakeProject(IProject project, IProgressMonitor monitor, boolean cppProject)
+            throws CoreException {
+        IProjectDescription description = project.getDescription();
+        String[] natureIds = cppProject
+                ? new String[] { CProjectNature.C_NATURE_ID, CCProjectNature.CC_NATURE_ID, CMakeNature.ID }
+                : new String[] { CProjectNature.C_NATURE_ID, CMakeNature.ID };
+        description.setNatureIds(natureIds);
+        CMakeNature.setupBuilder(description);
+        project.setDescription(description, monitor);
+        ensureCdtProjectModel(project, monitor);
+    }
+
+    private static void ensureCdtProjectModel(
+            IProject project,
+            IProgressMonitor monitor) throws CoreException {
+        if (CoreModel.getDefault()
+                .getProjectDescription(project, false) != null) {
+            return;
+        }
+
+        ICProject cProject = CoreModel.getDefault().create(project);
+
+        IPathEntry sourceEntry = CoreModel.newSourceEntry(
+                project.getFullPath(),
+                new org.eclipse.core.runtime.IPath[] {
+                        project.getFolder("build").getFullPath()
+                });
+
+        IPathEntry outputEntry = CoreModel.newOutputEntry(
+                project.getFolder("build").getFullPath());
+
+        cProject.setRawPathEntries(
+                new IPathEntry[] { sourceEntry, outputEntry },
+                monitor);
     }
 
     private static boolean isUserBuildConfiguration(IConfiguration config) {
@@ -229,10 +277,20 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
         }
 
         ICConfigurationDescription fallback = null;
-        for (ICConfigurationDescription configuration : description.getConfigurations()) {
-            if (isMik32ConfigurationName(configuration.getName())) {
-                fallback = configuration;
-                break;
+        IConfiguration selected = ManagedBuildManager.getSelectedConfiguration(project);
+        if (selected != null) {
+            ICConfigurationDescription selectedDescription =
+                    ManagedBuildManager.getDescriptionForConfiguration(selected);
+            if (selectedDescription != null) {
+                fallback = description.getConfigurationById(selectedDescription.getId());
+            }
+        }
+        if (fallback == null) {
+            for (ICConfigurationDescription configuration : description.getConfigurations()) {
+                if (isMik32ConfigurationName(configuration.getName())) {
+                    fallback = configuration;
+                    break;
+                }
             }
         }
         if (fallback == null) {
@@ -256,12 +314,12 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
         newConfig.setArtifactName(project.getName());
         newConfig.setArtifactExtension("elf");
         useInternalBuilder(newConfig);
-        
+
         IToolChain tc = newConfig.getToolChain();
         if (tc == null) {
             return;
         }
-        
+
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.target.isa.base", "ilg.gnumcueclipse.managedbuild.cross.riscv.option.target.arch.rv32i");
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.target.isa.multiply", true);
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.target.isa.compressed", true);
@@ -287,14 +345,14 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.target.tune", "ilg.gnumcueclipse.managedbuild.cross.riscv.option.target.tune.default");
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.target.codemodel", "ilg.gnumcueclipse.managedbuild.cross.riscv.option.target.codemodel.low");
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.warnings.allwarn", true);
-        
+
         String frameworkRoot = getFrameworkRoot(linkedFramework);
         String[] includePaths = getIncludePaths(frameworkRoot);
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.c.compiler.include.paths", includePaths);
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.assembler.usepreprocessor", true);
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.assembler.include.paths", includePaths);
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.cpp.compiler.include.paths", includePaths);
-        
+
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.c.linker.nostart", true);
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.c.linker.gcsections", true);
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.c.linker.usenewlibnano", true);
@@ -303,11 +361,11 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.cpp.linker.gcsections", true);
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.cpp.linker.usenewlibnano", true);
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.cpp.linker.mapfilename", project.getName() + ".map");
-        
+
         String[] libPaths = { frameworkRoot + "/shared/ldscripts" };
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.c.linker.paths", libPaths);
         setOptionValue(newConfig, tc, "ilg.gnumcueclipse.managedbuild.cross.riscv.option.cpp.linker.paths", libPaths);
-        
+
         String linkerScript = frameworkRoot + "/shared/ldscripts/eeprom.ld";
         if (name.contains("Flash")) {
             linkerScript = frameworkRoot + "/shared/ldscripts/spifi.ld";
@@ -532,6 +590,7 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
     }
 
     private static void writeFile(IFile file, String content, IProgressMonitor monitor) throws CoreException {
+        ensureParentFolder(file.getParent(), monitor);
         try (InputStream input = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8))) {
             if (file.exists()) {
                 file.setContents(input, true, true, monitor);
@@ -584,6 +643,8 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
         return "#ifndef MAIN_H_" + System.lineSeparator()
                 + "#define MAIN_H_" + System.lineSeparator()
                 + System.lineSeparator()
+                + "#include <stdint.h>" + System.lineSeparator()
+                + System.lineSeparator()
                 + "#ifdef __cplusplus" + System.lineSeparator()
                 + "extern \"C\" {" + System.lineSeparator()
                 + "#endif" + System.lineSeparator()
@@ -608,6 +669,7 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
                 + "binaryType=executable" + System.lineSeparator() + "buildSystem=" + mode.buildSystem
                 + System.lineSeparator() + "frameworkMode=" + (projectPage.isLinkFramework() ? "link" : "copy")
                 + System.lineSeparator() + "frameworkPath=" + Mik32PluginPreferences.getFrameworkPath()
+                + System.lineSeparator() + "memory=" + projectPage.getMemoryType()
                 + System.lineSeparator();
         IFile file = project.getFile(".mik32project");
         try (InputStream input = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8))) {
@@ -627,17 +689,30 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
         String uploadName = launchPrefix + " Upload";
         String debugName = launchPrefix + " Debug";
         String uploadDebugName = launchPrefix + " Upload Debug";
+        String outputDirectory = "${project_loc}/${config_name:${project_name}}";
 
         deleteGeneratedLaunchConfigurations(project, projectName, monitor);
-        writeFile(project.getFile(new Path(uploadName + ".launch")), createUploadLaunch(projectName), monitor);
-        writeFile(project.getFile(new Path(debugName + ".launch")), createDebugLaunch(projectName), monitor);
+        writeFile(project.getFile(new Path(uploadName + ".launch")),
+                createUploadLaunch(projectName, outputDirectory), monitor);
+        writeFile(project.getFile(new Path(debugName + ".launch")),
+                createDebugLaunch(projectName, outputDirectory), monitor);
         writeFile(project.getFile(new Path(uploadDebugName + ".launch")),
                 createUploadDebugLaunch(uploadName, debugName), monitor);
+    }
+
+    private static boolean isCMakeProject(IProject project) throws CoreException {
+        IFile metadata = project.getFile(".mik32project");
+        return metadata.exists() && readFile(metadata).contains("buildSystem=cmake");
     }
 
     static void updateLaunchConfigurationsForOpenProjects(IProgressMonitor monitor) throws CoreException {
         for (IProject project : ResourcesPlugin.getWorkspace().getRoot().getProjects()) {
             if (project.isOpen() && project.getFile(".mik32project").exists()) {
+                if (isCMakeProject(project)) {
+                    ensureCdtProjectModel(project, monitor);
+                } else {
+                    removeExtraCdtConfigurations(project, monitor);
+                }
                 createLaunchConfigurations(project, monitor);
             }
         }
@@ -671,12 +746,12 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
         }
     }
 
-    private static String createUploadLaunch(String projectName) {
-        String uploaderExecutable = getUploaderExecutable();
+    private static String createUploadLaunch(String projectName, String outputDirectory) {
+        UploaderCommand uploader = getUploaderCommand();
         String openocdExecutable = getOpenocdExecutable();
         String interfaceConfig = getInterfaceConfigPath();
         String targetConfig = getTargetConfigPath();
-        String arguments = "${project_name}.hex --run-openocd --openocd-exec=\"" + openocdExecutable
+        String arguments = uploader.argumentPrefix + "${project_name}.hex --run-openocd --openocd-exec=\"" + openocdExecutable
                 + "\" --openocd-interface=\"" + interfaceConfig + "\" --openocd-target=\"" + targetConfig + "\"";
 
         return xmlHeader()
@@ -688,10 +763,9 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
                 + "        <listEntry value=\"org.eclipse.ui.externaltools.launchGroup\"/>" + nl()
                 + "    </listAttribute>" + nl()
                 + str("org.eclipse.ui.externaltools.ATTR_LAUNCH_CONFIGURATION_BUILD_SCOPE", "${project}")
-                + str("org.eclipse.ui.externaltools.ATTR_LOCATION", uploaderExecutable)
+                + str("org.eclipse.ui.externaltools.ATTR_LOCATION", uploader.executable)
                 + str("org.eclipse.ui.externaltools.ATTR_TOOL_ARGUMENTS", arguments)
-                + str("org.eclipse.ui.externaltools.ATTR_WORKING_DIRECTORY",
-                        "${project_loc}/${config_name:${project_name}}")
+                + str("org.eclipse.ui.externaltools.ATTR_WORKING_DIRECTORY", outputDirectory)
                 + "</launchConfiguration>" + nl();
     }
 
@@ -717,7 +791,7 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
                 + "</launchConfiguration>" + nl();
     }
 
-    private static String createDebugLaunch(String projectName) {
+    private static String createDebugLaunch(String projectName, String outputDirectory) {
         String openocdExecutable = getOpenocdExecutable();
         String interfaceConfig = getInterfaceConfigPath();
         String targetConfig = getTargetConfigPath();
@@ -756,7 +830,7 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
                 + str("ilg.gnumcueclipse.debug.gdbjtag.openocd.otherInitCommands", "")
                 + str("ilg.gnumcueclipse.debug.gdbjtag.openocd.otherRunCommands", "")
                 + str("ilg.gnumcueclipse.debug.gdbjtag.openocd.secondResetType", "")
-                + str("ilg.gnumcueclipse.debug.gdbjtag.svdPath", "${workspace_loc}\\mik32v2.svd")
+                + str("ilg.gnumcueclipse.debug.gdbjtag.svdPath", "${project_loc}/svd/mik32v2.svd")
                 + str("org.eclipse.cdt.debug.gdbjtag.core.imageFileName", "")
                 + str("org.eclipse.cdt.debug.gdbjtag.core.imageOffset", "")
                 + str("org.eclipse.cdt.debug.gdbjtag.core.ipAddress", "localhost")
@@ -767,8 +841,8 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
                 + intAttr("org.eclipse.cdt.debug.gdbjtag.core.portNumber", 3333)
                 + bool("org.eclipse.cdt.debug.gdbjtag.core.setPcRegister", false)
                 + bool("org.eclipse.cdt.debug.gdbjtag.core.setResume", false)
-                + bool("org.eclipse.cdt.debug.gdbjtag.core.setStopAt", false)
-                + str("org.eclipse.cdt.debug.gdbjtag.core.stopAt", "")
+                + bool("org.eclipse.cdt.debug.gdbjtag.core.setStopAt", true)
+                + str("org.eclipse.cdt.debug.gdbjtag.core.stopAt", "main")
                 + str("org.eclipse.cdt.debug.gdbjtag.core.symbolsFileName", "")
                 + str("org.eclipse.cdt.debug.gdbjtag.core.symbolsOffset", "")
                 + bool("org.eclipse.cdt.debug.gdbjtag.core.useFileForImage", false)
@@ -781,7 +855,7 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
                 + intAttr("org.eclipse.cdt.launch.ATTR_BUILD_BEFORE_LAUNCH_ATTR", 2)
                 + str("org.eclipse.cdt.launch.COREFILE_PATH", "")
                 + str("org.eclipse.cdt.launch.PROGRAM_NAME",
-                        "${project_loc}/${config_name:${project_name}}/${project_name}.elf")
+                        outputDirectory + "/${project_name}.elf")
                 + str("org.eclipse.cdt.launch.PROJECT_ATTR", projectName)
                 + bool("org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_AUTO_ATTR", false)
                 + str("org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_ID_ATTR", "")
@@ -790,33 +864,77 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
                 + "        <listEntry value=\"org.eclipse.debug.ui.launchGroup.debug\"/>" + nl()
                 + "        <listEntry value=\"org.eclipse.debug.ui.launchGroup.run\"/>" + nl()
                 + "    </listAttribute>" + nl()
-                + str("org.eclipse.dsf.launch.MEMORY_BLOCKS",
-                        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>&#13;&#10;<memoryBlockExpressionList context=\"Context string\"/>&#13;&#10;")
+                + strRaw("org.eclipse.dsf.launch.MEMORY_BLOCKS",
+                        "&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;no&quot;?&gt;&#13;&#10;"
+                        + "&lt;memoryBlockExpressionList context=&quot;Context string&quot;/&gt;&#13;&#10;")
                 + str("process_factory_id", "org.eclipse.cdt.dsf.gdb.GdbProcessFactory")
                 + "</launchConfiguration>" + nl();
     }
 
-    private static String getUploaderExecutable() {
-        String uploaderPath = normalizePath(Mik32PluginPreferences.getUploaderPath());
-        if (!uploaderPath.isEmpty()) {
-            return uploaderPath + "/mik32_upload.exe";
+    private record UploaderCommand(String executable, String argumentPrefix) {
+    }
+
+    private static UploaderCommand getUploaderCommand() {
+        String uploaderPath = Mik32PluginPreferences.getUploaderPath();
+        if (uploaderPath != null && !uploaderPath.trim().isEmpty()) {
+            UploaderCommand command = findUploaderCommand(new File(uploaderPath.trim()));
+            if (command != null) {
+                return command;
+            }
         }
-        return "${eclipse_home}/../uploader/mik32_upload.exe";
+
+        try {
+            File eclipseHome = new File(Platform.getInstallLocation().getURL().toURI());
+            UploaderCommand command = findUploaderCommand(new File(eclipseHome, "../uploader").getCanonicalFile());
+            if (command != null) {
+                return command;
+            }
+        } catch (Exception exception) {
+            // Fall through to PATH lookup.
+        }
+
+        return new UploaderCommand(isWindows() ? "mik32_upload.exe" : "mik32_upload", "");
+    }
+
+    private static UploaderCommand findUploaderCommand(File directory) {
+        String nativeName = isWindows() ? "mik32_upload.exe" : "mik32_upload";
+        File nativeUploader = new File(directory, nativeName);
+        if (nativeUploader.isFile() && (isWindows() || nativeUploader.canExecute())) {
+            return new UploaderCommand(normalizePath(nativeUploader.getAbsolutePath()), "");
+        }
+
+        File pythonUploader = new File(directory, "mik32_upload.py");
+        if (!pythonUploader.isFile()) {
+            return null;
+        }
+        String script = "\"" + normalizePath(pythonUploader.getAbsolutePath()) + "\" ";
+        if (!isWindows() && pythonUploader.canExecute()) {
+            return new UploaderCommand(normalizePath(pythonUploader.getAbsolutePath()), "");
+        }
+        return isWindows()
+                ? new UploaderCommand("py", "-3 " + script)
+                : new UploaderCommand("/usr/bin/env", "python3 " + script);
     }
 
     private static String getOpenocdExecutable() {
         String uploaderPath = normalizePath(Mik32PluginPreferences.getUploaderPath());
+        String exe = isWindows() ? "openocd.exe" : "openocd";
         if (!uploaderPath.isEmpty()) {
-            File openocd = new File(new File(uploaderPath).getParentFile(), "openocd/bin/openocd.exe");
+            File openocd = new File(new File(uploaderPath).getParentFile(), "openocd/bin/" + exe);
             if (openocd.isFile()) {
                 return normalizePath(openocd.getAbsolutePath());
             }
         }
-        return "${eclipse_home}/../openocd/bin/openocd.exe";
+        return "${eclipse_home}/../openocd/bin/" + exe;
+    }
+
+    private static boolean isWindows() {
+        String os = System.getProperty("os.name");
+        return os != null && os.toLowerCase(java.util.Locale.ROOT).contains("win");
     }
 
     private static String getGdbExecutable() {
-        return "${eclipse_home}/../riscv-gcc/bin/riscv-none-elf-gdb";
+        return Mik32ToolRunner.launchToolPath("gdb");
     }
 
     private static String getInterfaceConfigPath() {
@@ -904,20 +1022,118 @@ public final class Mik32ProjectWizard extends Wizard implements INewWizard {
         if (mode != ProjectMode.CMAKE) {
             return;
         }
-        IFile file = project.getFile("CMakeLists.txt");
-        if (file.exists()) {
-            return;
-        }
-        String language = projectPage.isCpp() ? "CXX" : "C";
+        String line = System.lineSeparator();
+        String languages = projectPage.isCpp() ? "C CXX ASM" : "C ASM";
         String sourceFile = projectPage.isCpp() ? "Src/main.cpp" : "Src/main.c";
-        String content = "cmake_minimum_required(VERSION 3.20)" + System.lineSeparator()
-                + "project(" + project.getName() + " " + language + ")" + System.lineSeparator()
-                + "add_executable(${PROJECT_NAME} " + sourceFile + ")" + System.lineSeparator();
-        try (InputStream input = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8))) {
-            file.create(input, true, monitor);
-        } catch (java.io.IOException exception) {
-            throw new CoreException(new Status(IStatus.ERROR, Startup.PLUGIN_ID, exception.getMessage(), exception));
-        }
+        String frameworkPath = projectPage.isLinkFramework()
+                ? normalizePath(Mik32PluginPreferences.getFrameworkPath())
+                : "${CMAKE_CURRENT_SOURCE_DIR}/framework";
+
+        String content = "cmake_minimum_required(VERSION 3.20)" + line
+                + "set(CMAKE_TOOLCHAIN_FILE \"${CMAKE_CURRENT_LIST_DIR}/cmake/mik32-toolchain.cmake\"" + line
+                + "    CACHE FILEPATH \"MIK32 cross-compilation toolchain\")" + line
+                + "project(" + project.getName() + " LANGUAGES " + languages + ")" + line
+                + line
+                + "set(CMAKE_EXPORT_COMPILE_COMMANDS ON)" + line
+                + "set(MIK32_OUTPUT_DIR \"${CMAKE_CURRENT_SOURCE_DIR}/Configuration\")" + line
+                + "file(MAKE_DIRECTORY \"${MIK32_OUTPUT_DIR}\")" + line
+                + "set(MIK32_MEMORY \"" + projectPage.getMemoryType()
+                + "\" CACHE STRING \"Program memory: eeprom, flash or ram\")" + line
+                + "set_property(CACHE MIK32_MEMORY PROPERTY STRINGS eeprom flash ram)" + line
+                + "set(MIK32_FRAMEWORK_DIR \"" + frameworkPath + "\" CACHE PATH \"MIK32 framework directory\")" + line
+                + line
+                + "if(MIK32_MEMORY STREQUAL \"eeprom\")" + line
+                + "    set(MIK32_LINKER_SCRIPT \"${MIK32_FRAMEWORK_DIR}/shared/ldscripts/eeprom.ld\")" + line
+                + "elseif(MIK32_MEMORY STREQUAL \"flash\")" + line
+                + "    set(MIK32_LINKER_SCRIPT \"${MIK32_FRAMEWORK_DIR}/shared/ldscripts/spifi.ld\")" + line
+                + "elseif(MIK32_MEMORY STREQUAL \"ram\")" + line
+                + "    set(MIK32_LINKER_SCRIPT \"${MIK32_FRAMEWORK_DIR}/shared/ldscripts/ram.ld\")" + line
+                + "else()" + line
+                + "    message(FATAL_ERROR \"Unsupported MIK32_MEMORY: ${MIK32_MEMORY}\")" + line
+                + "endif()" + line
+                + line
+                + "file(GLOB MIK32_HAL_SOURCES CONFIGURE_DEPENDS" + line
+                + "    \"${MIK32_FRAMEWORK_DIR}/hal/core/Source/*.c\"" + line
+                + "    \"${MIK32_FRAMEWORK_DIR}/hal/peripherals/Source/*.c\"" + line
+                + "    \"${MIK32_FRAMEWORK_DIR}/hal/utilities/Source/*.c\"" + line
+                + "    \"${MIK32_FRAMEWORK_DIR}/shared/libs/*.c\"" + line
+                + ")" + line
+                + line
+                + "add_executable(${PROJECT_NAME}" + line
+                + "    " + sourceFile + line
+                + "    \"${MIK32_FRAMEWORK_DIR}/shared/runtime/crt0.S\"" + line
+                + "    ${MIK32_HAL_SOURCES}" + line
+                + ")" + line
+                + line
+                + "target_include_directories(${PROJECT_NAME} PRIVATE" + line
+                + "    Inc Src" + line
+                + "    \"${MIK32_FRAMEWORK_DIR}/shared/include\"" + line
+                + "    \"${MIK32_FRAMEWORK_DIR}/shared/periphery\"" + line
+                + "    \"${MIK32_FRAMEWORK_DIR}/shared/runtime\"" + line
+                + "    \"${MIK32_FRAMEWORK_DIR}/shared/libs\"" + line
+                + "    \"${MIK32_FRAMEWORK_DIR}/hal/core/Include\"" + line
+                + "    \"${MIK32_FRAMEWORK_DIR}/hal/peripherals/Include\"" + line
+                + "    \"${MIK32_FRAMEWORK_DIR}/hal/utilities/Include\"" + line
+                + ")" + line
+                + line
+                + "target_link_directories(${PROJECT_NAME} PRIVATE" + line
+                + "    \"${MIK32_FRAMEWORK_DIR}/shared/ldscripts\"" + line
+                + ")" + line
+                + line
+                + "target_compile_options(${PROJECT_NAME} PRIVATE" + line
+                + "    -march=rv32imc_zicsr_zifencei -mabi=ilp32" + line
+                + "    -Os -g3 -ffunction-sections -fdata-sections" + line
+                + "    -fsigned-char -Wall -fmessage-length=0" + line
+                + ")" + line
+                + "target_link_options(${PROJECT_NAME} PRIVATE" + line
+                + "    -march=rv32imc_zicsr_zifencei -mabi=ilp32" + line
+                + "    -nostartfiles --specs=nano.specs" + line
+                + "    -Wl,--gc-sections" + line
+                + "    -Wl,-Map=${MIK32_OUTPUT_DIR}/${PROJECT_NAME}.map" + line
+                + "    -T${MIK32_LINKER_SCRIPT}" + line
+                + ")" + line
+                + "target_link_libraries(${PROJECT_NAME} PRIVATE m)" + line
+                + "set_target_properties(${PROJECT_NAME} PROPERTIES" + line
+                + "    SUFFIX \".elf\"" + line
+                + "    RUNTIME_OUTPUT_DIRECTORY \"${MIK32_OUTPUT_DIR}\"" + line
+                + ")" + line
+                + line
+                + "add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD" + line
+                + "    COMMAND \"${CMAKE_OBJCOPY}\" -O ihex" + line
+                + "            \"$<TARGET_FILE:${PROJECT_NAME}>\"" + line
+                + "            \"${MIK32_OUTPUT_DIR}/${PROJECT_NAME}.hex\"" + line
+                + "    COMMAND \"${CMAKE_SIZE}\" \"$<TARGET_FILE:${PROJECT_NAME}>\"" + line
+                + "    COMMENT \"Generating HEX and memory usage report\"" + line
+                + ")" + line;
+        writeFile(project.getFile("CMakeLists.txt"), content, monitor);
+        createCMakeToolchainFile(project, monitor);
+    }
+
+    private static void createCMakeToolchainFile(IProject project, IProgressMonitor monitor) throws CoreException {
+        String line = System.lineSeparator();
+        String toolchainPath = normalizePath(Mik32PluginPreferences.getToolchainPath());
+        String content = "set(CMAKE_SYSTEM_NAME Generic)" + line
+                + "set(CMAKE_SYSTEM_PROCESSOR riscv)" + line
+                + "set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)" + line
+                + line
+                + "set(MIK32_TOOLCHAIN_PATH \"" + toolchainPath
+                + "\" CACHE PATH \"Directory containing the RISC-V GCC executables\")" + line
+                + "set(_MIK32_TOOL_HINTS)" + line
+                + "if(MIK32_TOOLCHAIN_PATH)" + line
+                + "    list(APPEND _MIK32_TOOL_HINTS \"${MIK32_TOOLCHAIN_PATH}\")" + line
+                + "endif()" + line
+                + line
+                + "find_program(CMAKE_C_COMPILER NAMES riscv-none-elf-gcc HINTS ${_MIK32_TOOL_HINTS} REQUIRED)" + line
+                + "find_program(CMAKE_CXX_COMPILER NAMES riscv-none-elf-g++ HINTS ${_MIK32_TOOL_HINTS} REQUIRED)" + line
+                + "set(CMAKE_ASM_COMPILER \"${CMAKE_C_COMPILER}\")" + line
+                + "find_program(CMAKE_OBJCOPY NAMES riscv-none-elf-objcopy HINTS ${_MIK32_TOOL_HINTS} REQUIRED)" + line
+                + "find_program(CMAKE_SIZE NAMES riscv-none-elf-size HINTS ${_MIK32_TOOL_HINTS} REQUIRED)" + line
+                + line
+                + "set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)" + line
+                + "set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)" + line
+                + "set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)" + line
+                + "set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)" + line;
+        writeFile(project.getFile(new Path("cmake/mik32-toolchain.cmake")), content, monitor);
     }
 
     static void ensureParentFolder(IContainer container, IProgressMonitor monitor) throws CoreException {

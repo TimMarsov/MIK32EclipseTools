@@ -11,12 +11,14 @@ import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.DirectoryDialog;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Text;
 
 final class Mik32ProjectPage extends WizardPage {
+    private final boolean showMemorySelection;
     private Text projectNameText;
     private Button useDefaultLocationButton;
     private Text locationText;
@@ -25,9 +27,11 @@ final class Mik32ProjectPage extends WizardPage {
     private Button cppLanguageButton;
     private Button copyFrameworkButton;
     private Button linkFrameworkButton;
+    private Combo memoryCombo;
 
-    Mik32ProjectPage(String title) {
+    Mik32ProjectPage(String title, boolean showMemorySelection) {
         super("mik32ProjectPage");
+        this.showMemorySelection = showMemorySelection;
         setTitle(title);
         setDescription("Create a MIK32 embedded project.");
     }
@@ -40,6 +44,9 @@ final class Mik32ProjectPage extends WizardPage {
         createProjectGroup(root);
         createLanguageGroup(root);
         createFrameworkGroup(root);
+        if (showMemorySelection) {
+            createMemoryGroup(root);
+        }
 
         setControl(root);
         Dialog.applyDialogFont(root);
@@ -64,6 +71,17 @@ final class Mik32ProjectPage extends WizardPage {
 
     boolean isLinkFramework() {
         return linkFrameworkButton.getSelection();
+    }
+
+    String getMemoryType() {
+        if (memoryCombo == null) {
+            return "eeprom";
+        }
+        return switch (memoryCombo.getSelectionIndex()) {
+        case 1 -> "flash";
+        case 2 -> "ram";
+        default -> "eeprom";
+        };
     }
 
     private void createProjectGroup(Composite parent) {
@@ -136,6 +154,21 @@ final class Mik32ProjectPage extends WizardPage {
 
         cppLanguageButton = new Button(group, SWT.RADIO);
         cppLanguageButton.setText("C++");
+    }
+
+    private void createMemoryGroup(Composite parent) {
+        Group group = new Group(parent, SWT.NONE);
+        group.setText("Program Memory");
+        group.setLayout(new GridLayout(2, false));
+        group.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+
+        Label label = new Label(group, SWT.NONE);
+        label.setText("Link application to:");
+
+        memoryCombo = new Combo(group, SWT.DROP_DOWN | SWT.READ_ONLY);
+        memoryCombo.setItems("EEPROM", "Flash (SPIFI)", "RAM");
+        memoryCombo.select(0);
+        memoryCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
     }
 
     private void browseLocation() {

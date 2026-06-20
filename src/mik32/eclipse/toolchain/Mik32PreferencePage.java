@@ -125,7 +125,8 @@ public final class Mik32PreferencePage extends PreferencePage implements IWorkbe
         store.setValue(Mik32PluginPreferences.EXAMPLES_PATH, examplesPathText.getText().trim());
         store.setValue(Mik32PluginPreferences.UPLOADER_PATH, newUploaderPath);
         store.setValue(Mik32PluginPreferences.PROGRAMMER_CONFIG, newProgrammerConfig);
-        if (!oldUploaderPath.equals(newUploaderPath) || !oldProgrammerConfig.equals(newProgrammerConfig)) {
+        if (!oldUploaderPath.equals(newUploaderPath)
+                || !oldProgrammerConfig.equals(newProgrammerConfig)) {
             try {
                 Mik32ProjectWizard.updateLaunchConfigurationsForOpenProjects(new NullProgressMonitor());
             } catch (CoreException exception) {

@@ -8,6 +8,10 @@ public final class Mik32PluginPreferences {
     public static final String UPLOADER_PATH = "uploaderPath";
     public static final String PROGRAMMER_CONFIG = "programmerConfig";
 
+    private static final String RISCV_TOOLCHAIN_PLUGIN_ID =
+            "org.eclipse.embedcdt.managedbuild.cross.riscv.core";
+    private static final String RISCV_TOOLCHAIN_PATH_KEY = "toolchain.path.2273142913";
+
     private Mik32PluginPreferences() {
     }
 
@@ -21,6 +25,11 @@ public final class Mik32PluginPreferences {
 
     public static String getUploaderPath() {
         return get(UPLOADER_PATH);
+    }
+
+    public static String getToolchainPath() {
+        return Platform.getPreferencesService().getString(
+                RISCV_TOOLCHAIN_PLUGIN_ID, RISCV_TOOLCHAIN_PATH_KEY, "", null);
     }
 
     public static String getProgrammerConfig() {

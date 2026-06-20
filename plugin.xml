@@ -2,7 +2,6 @@
 <?eclipse version="3.4"?>
 
 <plugin>
-
     <extension
         point="org.eclipse.cdt.managedbuilder.core.buildDefinitions">
         <managedBuildRevision
@@ -23,7 +22,6 @@
                 parent="ilg.gnumcueclipse.managedbuild.cross.riscv.config.elf.debug">
                 <toolChain
                     id="mik32.eclipse.toolchain.toolchain.debug.eeprom"
-                    secondaryOutputs="ilg.gnumcueclipse.managedbuild.cross.riscv.createflash.output;ilg.gnumcueclipse.managedbuild.cross.riscv.createlisting.output;ilg.gnumcueclipse.managedbuild.cross.riscv.printsize.output"
                     superClass="ilg.gnumcueclipse.managedbuild.cross.riscv.toolchain.elf.debug"
                     targetTool="ilg.gnumcueclipse.managedbuild.cross.riscv.tool.c.linker;ilg.gnumcueclipse.managedbuild.cross.riscv.tool.cpp.linker">
                 </toolChain>
@@ -35,7 +33,6 @@
                 parent="ilg.gnumcueclipse.managedbuild.cross.riscv.config.elf.debug">
                 <toolChain
                     id="mik32.eclipse.toolchain.toolchain.debug.flash"
-                    secondaryOutputs="ilg.gnumcueclipse.managedbuild.cross.riscv.createflash.output;ilg.gnumcueclipse.managedbuild.cross.riscv.createlisting.output;ilg.gnumcueclipse.managedbuild.cross.riscv.printsize.output"
                     superClass="ilg.gnumcueclipse.managedbuild.cross.riscv.toolchain.elf.debug"
                     targetTool="ilg.gnumcueclipse.managedbuild.cross.riscv.tool.c.linker;ilg.gnumcueclipse.managedbuild.cross.riscv.tool.cpp.linker">
                 </toolChain>
@@ -47,7 +44,6 @@
                 parent="ilg.gnumcueclipse.managedbuild.cross.riscv.config.elf.debug">
                 <toolChain
                     id="mik32.eclipse.toolchain.toolchain.debug.ram"
-                    secondaryOutputs="ilg.gnumcueclipse.managedbuild.cross.riscv.createflash.output;ilg.gnumcueclipse.managedbuild.cross.riscv.createlisting.output;ilg.gnumcueclipse.managedbuild.cross.riscv.printsize.output"
                     superClass="ilg.gnumcueclipse.managedbuild.cross.riscv.toolchain.elf.debug"
                     targetTool="ilg.gnumcueclipse.managedbuild.cross.riscv.tool.c.linker;ilg.gnumcueclipse.managedbuild.cross.riscv.tool.cpp.linker">
                 </toolChain>
